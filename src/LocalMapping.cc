@@ -1302,6 +1302,7 @@ void LocalMapping::InitializeIMU(float priorG, float priorA, bool bFIBA)
 
     mInitTime = mpTracker->mLastFrame.mTimeStamp-vpKF.front()->mTimeStamp;
 
+    // 优化g, scale, bg, ba, vel, fix frame pose
     std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
     Optimizer::InertialOptimization(mpAtlas->GetCurrentMap(), mRwg, mScale, mbg, mba, mbMonocular, infoInertial, false, false, priorG, priorA);
     std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();
@@ -1343,6 +1344,7 @@ void LocalMapping::InitializeIMU(float priorG, float priorA, bool bFIBA)
     cout << "ba: " << mpCurrentKeyFrame->GetAccBias() << endl;
     cout << "bg: " << mpCurrentKeyFrame->GetGyroBias() << endl;*/
 
+    //full ba,优化: bg, ba, vel, pose, point
     std::chrono::steady_clock::time_point t4 = std::chrono::steady_clock::now();
     if (bFIBA)
     {
@@ -1424,6 +1426,7 @@ void LocalMapping::ScaleRefinement()
     mRwg = Eigen::Matrix3d::Identity();
     mScale=1.0;
 
+    // 只优化 g, scale
     std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
     Optimizer::InertialOptimization(mpAtlas->GetCurrentMap(), mRwg, mScale);
     std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();

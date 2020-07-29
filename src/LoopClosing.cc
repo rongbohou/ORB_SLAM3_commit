@@ -70,6 +70,7 @@ void LoopClosing::Run()
             }
             if(NewDetectCommonRegions())
             {
+                // 两keyframe 属于不同的Map
                 if(mbMergeDetected)
                 {
                     if ((mpTracker->mSensor==System::IMU_MONOCULAR ||mpTracker->mSensor==System::IMU_STEREO) &&
@@ -88,6 +89,7 @@ void LoopClosing::Run()
                         g2o::Sim3 gSw2c = mg2oMergeSlw.inverse();
                         g2o::Sim3 gSw1m = mg2oMergeSlw;
 
+                        // 两Map 间的transformation: T21
                         mSold_new = (gSw2c * gScw1);
 
                         if(mpCurrentKF->GetMap()->IsInertial() && mpMergeMatchedKF->GetMap()->IsInertial())
@@ -104,6 +106,7 @@ void LoopClosing::Run()
                                 continue;
                             }
                             // If inertial, force only yaw
+                            // 两map 保证重力对齐的
                             if ((mpTracker->mSensor==System::IMU_MONOCULAR ||mpTracker->mSensor==System::IMU_STEREO) &&
                                    mpCurrentKF->GetMap()->GetIniertialBA1()) // TODO, maybe with GetIniertialBA1
                             {
@@ -158,6 +161,7 @@ void LoopClosing::Run()
 
                 }
 
+                // 两keyframe 都属于active Map
                 if(mbLoopDetected)
                 {
                     vdPR_CurrentTime.push_back(mpCurrentKF->mTimeStamp);

@@ -715,7 +715,7 @@ public:
         for(int i=0;i<15;i++)
             if(eigs[i]<1e-12)
                 eigs[i]=0;
-        H = es.eigenvectors()*eigs.asDiagonal()*es.eigenvectors().transpose();
+        H = es.eigenvectors()*eigs.asDiagonal()*es.eigenvectors().transpose(); //确保H可逆
     }
     ConstraintPoseImu(const cv::Mat &Rwb_, const cv::Mat &twb_, const cv::Mat &vwb_,
                        const IMU::Bias &b, const cv::Mat &H_)

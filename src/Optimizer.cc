@@ -417,6 +417,10 @@ void Optimizer::BundleAdjustment(const vector<KeyFrame *> &vpKFs, const vector<M
     }
 }
 
+//　主要用于IMU的初始化
+// 优化: pose, bg, ba, vel, point
+// flag bInit指的是,是否处于初始化阶段　
+//todo: 疑惑: 此时只有biasg, biasa的prior（也有可能没有）, 这样也能优化?
 void Optimizer::FullInertialBA(Map *pMap, int its, const bool bFixLocal, const long unsigned int nLoopId, bool *pbStopFlag, bool bInit, float priorG, float priorA, Eigen::VectorXd *vSingVal, bool *bHess)
 {
     long unsigned int maxKFid = pMap->GetMaxKFid();
@@ -481,6 +485,7 @@ void Optimizer::FullInertialBA(Map *pMap, int its, const bool bFixLocal, const l
         }
     }
 
+    // 此段时间内,bias是const. 优化同一个bias_g, bias_a
     if (bInit)
     {
         VertexGyroBias* VG = new VertexGyroBias(pIncKF);
@@ -850,7 +855,7 @@ void Optimizer::FullInertialBA(Map *pMap, int its, const bool bFixLocal, const l
     pMap->IncreaseChangeIndex();
 }
 
-
+//优化pose, xyz pnp
 int Optimizer::PoseOptimization(Frame *pFrame)
 {
     g2o::SparseOptimizer optimizer;
@@ -1696,6 +1701,7 @@ void Optimizer::LocalBundleAdjustment(KeyFrame *pKF, bool* pbStopFlag, vector<Ke
     pCurrentMap->IncreaseChangeIndex();
 }
 
+//　纯视觉　LocalBA
 void Optimizer::LocalBundleAdjustment(KeyFrame *pKF, bool* pbStopFlag, Map* pMap, int& num_fixedKF)
 {    
     //cout << "LBA" << endl;
@@ -4570,14 +4576,16 @@ int Optimizer::OptimizeSim3(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint *> &
     return nIn;
 }
 
-
+// 优化: pose, bg, ba, vel, point. 用于VI 初始化后,VI LocalBA
+// 策略与ORB-SLAM VI 一致
+// bRecInit: 是否处于初始化阶段(包括三次初始化操作)
 void Optimizer::LocalInertialBA(KeyFrame *pKF, bool *pbStopFlag, Map *pMap, bool bLarge, bool bRecInit)
 {
     std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
     Map* pCurrentMap = pKF->GetMap();
 
     int maxOpt=10;
-    int opt_it=10;
+    int opt_it=10; //迭代次数
     if(bLarge)
     {
         maxOpt=25;
@@ -4586,8 +4594,11 @@ void Optimizer::LocalInertialBA(KeyFrame *pKF, bool *pbStopFlag, Map *pMap, bool
     const int Nd = std::min((int)pCurrentMap->KeyFramesInMap()-2,maxOpt);
     const unsigned long maxKFid = pKF->mnId;
 
+    //从新到老排列
     vector<KeyFrame*> vpOptimizableKFs;
+    //和curKeyframe共视的keyframes
     const vector<KeyFrame*> vpNeighsKFs = pKF->GetVectorCovisibleKeyFrames();
+    //window以外的keyframes, 与curKeyframe有足够共视的keyframes, 目前没有用到
     list<KeyFrame*> lpOptVisKFs;
 
     vpOptimizableKFs.reserve(Nd);
@@ -4625,6 +4636,7 @@ void Optimizer::LocalInertialBA(KeyFrame *pKF, bool *pbStopFlag, Map *pMap, bool
     }
 
     // Fixed Keyframe: First frame previous KF to optimization window)
+    //　window中最老帧有pre_KF, 则fix　pre_KF;　否则：fix window中的最老帧
     list<KeyFrame*> lFixedKeyFrames;
     if(vpOptimizableKFs.back()->mPrevKF)
     {
@@ -4640,7 +4652,7 @@ void Optimizer::LocalInertialBA(KeyFrame *pKF, bool *pbStopFlag, Map *pMap, bool
     }
 
     // Optimizable visual KFs
-    const int maxCovKF = 0;
+    const int maxCovKF = 0; // 目前没有用到
     for(int i=0, iend=vpNeighsKFs.size(); i<iend; i++)
     {
         if(lpOptVisKFs.size() >= maxCovKF)
@@ -5299,7 +5311,7 @@ Eigen::MatrixXd Optimizer::Sparsify(const Eigen::MatrixXd &H, const int &start1,
     return Hac+Hbc-Hc;
 }
 
-
+// 优化g, scale, bg, ba, vel(!bFixedVel)
 void Optimizer::InertialOptimization(Map *pMap, Eigen::Matrix3d &Rwg, double &scale, Eigen::Vector3d &bg, Eigen::Vector3d &ba, bool bMono, Eigen::MatrixXd  &covInertial, bool bFixedVel, bool bGauss, float priorG, float priorA)
 {
     Verbose::PrintMess("inertial optimization", Verbose::VERBOSITY_NORMAL);
@@ -5414,14 +5426,14 @@ void Optimizer::InertialOptimization(Map *pMap, Eigen::Matrix3d &Rwg, double &sc
                 continue;
             }
             EdgeInertialGS* ei = new EdgeInertialGS(pKFi->mpImuPreintegrated);
-            ei->setVertex(0,dynamic_cast<g2o::OptimizableGraph::Vertex*>(VP1));
-            ei->setVertex(1,dynamic_cast<g2o::OptimizableGraph::Vertex*>(VV1));
-            ei->setVertex(2,dynamic_cast<g2o::OptimizableGraph::Vertex*>(VG));
-            ei->setVertex(3,dynamic_cast<g2o::OptimizableGraph::Vertex*>(VA));
-            ei->setVertex(4,dynamic_cast<g2o::OptimizableGraph::Vertex*>(VP2));
-            ei->setVertex(5,dynamic_cast<g2o::OptimizableGraph::Vertex*>(VV2));
-            ei->setVertex(6,dynamic_cast<g2o::OptimizableGraph::Vertex*>(VGDir));
-            ei->setVertex(7,dynamic_cast<g2o::OptimizableGraph::Vertex*>(VS));
+            ei->setVertex(0,dynamic_cast<g2o::OptimizableGraph::Vertex*>(VP1)); // pose 1
+            ei->setVertex(1,dynamic_cast<g2o::OptimizableGraph::Vertex*>(VV1)); // vel  1
+            ei->setVertex(2,dynamic_cast<g2o::OptimizableGraph::Vertex*>(VG));  // bias_g
+            ei->setVertex(3,dynamic_cast<g2o::OptimizableGraph::Vertex*>(VA));  // bias_a
+            ei->setVertex(4,dynamic_cast<g2o::OptimizableGraph::Vertex*>(VP2)); // pose 2
+            ei->setVertex(5,dynamic_cast<g2o::OptimizableGraph::Vertex*>(VV2)); // vel  2
+            ei->setVertex(6,dynamic_cast<g2o::OptimizableGraph::Vertex*>(VGDir));//g direction
+            ei->setVertex(7,dynamic_cast<g2o::OptimizableGraph::Vertex*>(VS));   // scale
 
             vpei.push_back(ei);
 
@@ -5467,6 +5479,7 @@ void Optimizer::InertialOptimization(Map *pMap, Eigen::Matrix3d &Rwg, double &sc
         Eigen::Vector3d Vw = VV->estimate(); // Velocity is scaled after
         pKFi->SetVelocity(Converter::toCvMat(Vw));
 
+        // bg变化达到一定阈值,才会重新integrate
         if (cv::norm(pKFi->GetGyroBias()-cvbg)>0.01)
         {
             pKFi->SetNewBias(b);
@@ -5475,12 +5488,11 @@ void Optimizer::InertialOptimization(Map *pMap, Eigen::Matrix3d &Rwg, double &sc
         }
         else
             pKFi->SetNewBias(b);
-
-
     }
 }
 
 
+// 优化: bg, ba, vel; fix: pose, g, scale
 void Optimizer::InertialOptimization(Map *pMap, Eigen::Vector3d &bg, Eigen::Vector3d &ba, float priorG, float priorA)
 {
     int its = 200; // Check number of iterations
@@ -5804,7 +5816,7 @@ void Optimizer::InertialOptimization(vector<KeyFrame*> vpKFs, Eigen::Vector3d &b
     }
 }
 
-
+// 只优化：g, scale
 void Optimizer::InertialOptimization(Map *pMap, Eigen::Matrix3d &Rwg, double &scale)
 {
     int its = 10;
@@ -7476,6 +7488,8 @@ void Optimizer::MergeInertialBA(KeyFrame* pCurrKF, KeyFrame* pMergeKF, bool *pbS
     pMap->IncreaseChangeIndex();
 }
 
+// 优化:curframe state; fix: lastKeyframe state, point
+// 同时获得curframe state prior,Hprior, delete lastframe prior
 int Optimizer::PoseInertialOptimizationLastKeyFrame(Frame *pFrame, bool bRecInit)
 {
     g2o::SparseOptimizer optimizer;
@@ -7871,6 +7885,9 @@ int Optimizer::PoseInertialOptimizationLastKeyFrame(Frame *pFrame, bool bRecInit
     return nInitialCorrespondences-nBad;
 }
 
+// 优化:curframe, lastframe state; fix: point
+// 加入lastframe先验项, state_prior, H_prior
+// 同时获得curframe state prior,Hprior, delete lastframe prior
 int Optimizer::PoseInertialOptimizationLastFrame(Frame *pFrame, bool bRecInit)
 {
     g2o::SparseOptimizer optimizer;
@@ -8297,9 +8314,6 @@ int Optimizer::PoseInertialOptimizationLastFrame(Frame *pFrame, bool bRecInit)
 
     return nInitialCorrespondences-nBad;
 }
-
-
-
 
 
 void Optimizer::OptimizeEssentialGraph4DoF(Map* pMap, KeyFrame* pLoopKF, KeyFrame* pCurKF,
