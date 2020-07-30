@@ -147,6 +147,7 @@ void LoopClosing::Run()
                     mnMergeNumNotFound = 0;
                     mbMergeDetected = false;
 
+                    //不会再进行loopDetected操作
                     if(mbLoopDetected)
                     {
                         // Reset Loop variables
@@ -1057,18 +1058,22 @@ void LoopClosing::CorrectLoop()
     mvpCurrentConnectedKFs = mpCurrentKF->GetVectorCovisibleKeyFrames();
     mvpCurrentConnectedKFs.push_back(mpCurrentKF);
 
+    //CorrectedSim3: 修正后的Sim3, 保证其与curKF的relativePose不变, curKF修正后的Sim3为;
     KeyFrameAndPose CorrectedSim3, NonCorrectedSim3;
     CorrectedSim3[mpCurrentKF]=mg2oLoopScw;
     cv::Mat Twc = mpCurrentKF->GetPoseInverse();
 
     Map* pLoopMap = mpCurrentKF->GetMap();
 
+    // 更新所有与curKF共视的keyframes pose为修正后pose;
+    // 已经更新与keyframes关联的mapPoints
     {
         // Get Map Mutex
         unique_lock<mutex> lock(pLoopMap->mMutexMapUpdate);
 
         const bool bImuInit = pLoopMap->isImuInitialized();
 
+        //计算所有与curKF共视的keyframes 修正后的Sim3
         for(vector<KeyFrame*>::iterator vit=mvpCurrentConnectedKFs.begin(), vend=mvpCurrentConnectedKFs.end(); vit!=vend; vit++)
         {
             KeyFrame* pKFi = *vit;
@@ -1183,7 +1188,7 @@ void LoopClosing::CorrectLoop()
     SearchAndFuse(CorrectedSim3, mvpLoopMapPoints);
     //cout << "LC: end SearchAndFuse" << endl;
 
-
+    // 精简essential graph
     // After the MapPoint fusion, new links in the covisibility graph will appear attaching both sides of the loop
     //cout << "LC: start updating covisibility graph" << endl;
     map<KeyFrame*, set<KeyFrame*> > LoopConnections;
@@ -2014,6 +2019,7 @@ void LoopClosing::MergeLocal2()
         bool bScaleVel=false;
         if(s_on!=1)
             bScaleVel=true;
+        // transfor current active map to the merge map
         mpAtlas->GetCurrentMap()->ApplyScaledRotation(R_on,s_on,bScaleVel,t_on);
         mpTracker->UpdateFrameIMU(s_on,mpCurrentKF->GetImuBias(),mpTracker->GetLastKeyFrame());
 
@@ -2128,6 +2134,7 @@ void LoopClosing::MergeLocal2()
     vector<KeyFrame*> vpCurrentConnectedKFs;
 
 
+    //获得与Km共视的Keyframes
 
     mvpMergeConnectedKFs.push_back(mpMergeMatchedKF);
     vector<KeyFrame*> aux = mpMergeMatchedKF->GetVectorCovisibleKeyFrames();
@@ -2136,6 +2143,8 @@ void LoopClosing::MergeLocal2()
         mvpMergeConnectedKFs.erase(mvpMergeConnectedKFs.begin()+6,mvpMergeConnectedKFs.end());
     /*mvpMergeConnectedKFs = mpMergeMatchedKF->GetVectorCovisibleKeyFrames();
     mvpMergeConnectedKFs.push_back(mpMergeMatchedKF);*/
+
+    //获得与Ka共视的Keyframes
 
     mpCurrentKF->UpdateConnections();
     vpCurrentConnectedKFs.push_back(mpCurrentKF);
@@ -2146,6 +2155,7 @@ void LoopClosing::MergeLocal2()
     if (vpCurrentConnectedKFs.size()>6)
         vpCurrentConnectedKFs.erase(vpCurrentConnectedKFs.begin()+6,vpCurrentConnectedKFs.end());
 
+    // 获得被mvpMergeConnectedKFs看到的mapPoint
     set<MapPoint*> spMapPointMerge;
     for(KeyFrame* pKFi : mvpMergeConnectedKFs)
     {
